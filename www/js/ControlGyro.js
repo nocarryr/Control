@@ -1,6 +1,6 @@
 // Gyro is a singleton object.
 
-function ControlGyro(props) {
+Control.Gyro = function(props) {
 	this.make("sensor", props);
     
     this.hardwareMin = -1.57;
@@ -15,7 +15,7 @@ function ControlGyro(props) {
     this.yawHardwareMax = 3.14;
     this.yawHardwareRange = this.yawHardwareMax - this.yawHardwareMin;
 	
-	if(_protocol == "MIDI") {
+	if(Control.protocol == "MIDI") {
 		this.max = (typeof props.midiMax != "undefined") ? props.midiMax : 127;
 		this.min = (typeof props.midiMin != "undefined") ? props.midiMin : 0;
 	}else{
@@ -37,61 +37,67 @@ function ControlGyro(props) {
     return this;
 }
 
-ControlGyro.prototype = new Widget();
+Control.Gyro.prototype = new Widget();
     	
 //gyro._onGyroUpdate({'xRotationRate':0.002622,'yRotationRate':-0.004301,'zRotationRate':-0.012185},{'pitch':0.021584,'roll':-0.002796,'yaw':-0.016728})
 	
-ControlGyro.prototype._onGyroUpdate = function(rotationRate, euler) {             1
-    this.pitch = this.min + (((0 - this.hardwareMin)    + euler.pitch)  / this.hardwareRange )    * this.userDefinedRange;
-    this.roll =  this.min + (((0 - this.yawHardwareMin) + euler.roll)   / this.yawHardwareRange ) * this.userDefinedRange;
-    this.yaw =   this.min + (((0 - this.yawHardwareMin) + euler.yaw)    / this.yawHardwareRange ) * this.userDefinedRange;
+Control.Gyro.prototype.onUpdate = function(rotationRate, euler) {
+    this.pitch = this.min + (Math.abs(this.hardwareMin    + euler.pitch)  / this.hardwareRange )    * this.userDefinedRange;
+    this.roll =  this.min + (Math.abs(this.yawHardwareMin + euler.roll)   / this.yawHardwareRange ) * this.userDefinedRange;
+    this.yaw =   this.min + (Math.abs(this.yawHardwareMin + euler.yaw )   / this.yawHardwareRange ) * this.userDefinedRange;
     
-    this.xRotationRate = this.rotationHardwareMin + (((0 - this.rotationHardwareMin) + rotationRate.xRotationRate) / this.rotationHardwareRange) * this.userDefinedRange;
-    this.yRotationRate = this.rotationHardwareMin + (((0 - this.rotationHardwareMin) + rotationRate.yRotationRate) / this.rotationHardwareRange) * this.userDefinedRange;
-    this.zRotationRate = this.rotationHardwareMin + (((0 - this.rotationHardwareMin) + rotationRate.zRotationRate) / this.rotationHardwareRange) * this.userDefinedRange;;
-    
+//    this.xRotationRate = this.rotationHardwareMin + (Math.abs(this.rotationHardwareMin + rotationRate.xRotationRate) / this.rotationHardwareRange) * this.userDefinedRange;
+//    this.yRotationRate = this.rotationHardwareMin + (Math.abs(this.rotationHardwareMin + rotationRate.yRotationRate) / this.rotationHardwareRange) * this.userDefinedRange;
+//    this.zRotationRate = this.rotationHardwareMin + (Math.abs(this.rotationHardwareMin + rotationRate.zRotationRate) / this.rotationHardwareRange) * this.userDefinedRange;
+    this.xRotationRate = rotationRate.xRotationRate;
+    this.yRotationRate = rotationRate.yRotationRate;
+    this.zRotationRate = rotationRate.zRotationRate;
     
     if(this.onvaluechange != null) {
-        eval(this.onvaluechange);
+        if(typeof this.onvaluechange === "string") {
+            eval(this.onvaluechange);
+        }else{
+            this.onvaluechange();
+        }
     }
     
-    if(!this.isLocal && _protocol == "OSC") {
+    if(!this.isLocal && Control.protocol == "OSC") {
         var valueString = "|" + this.address;
         valueString += ":" + this.xRotationRate + "," + this.yRotationRate + "," + this.zRotationRate + "," + this.pitch + "," + this.roll + "," + this.yaw;
-        control.valuesString += valueString;
-    }else if (!this.isLocal && _protocol == "MIDI") {
+        Control.valuesString += valueString;
+    }else if (!this.isLocal && Control.protocol == "MIDI") {
         var valueString = "|" + this.midiType + "," + (this.channel - 1) + "," + this.midiNumber+ "," + Math.round(this.xRotationRate);			
-        control.valuesString += valueString;
+        Control.valuesString += valueString;
         valueString = "|" + this.midiType + "," + (this.channel - 1) + "," + (this.midiNumber+ 1) + "," + Math.round(this.yRotationRate);			
-        control.valuesString += valueString;
+        Control.valuesString += valueString;
         valueString = "|" + this.midiType + "," + (this.channel - 1) + "," + (this.midiNumber+ 2) + "," + Math.round(this.zRotationRate);			
-        control.valuesString += valueString;
+        Control.valuesString += valueString;
         valueString = "|" + this.midiType + "," + (this.channel - 1) + "," + (this.midiNumber+ 3) + "," + Math.round(this.pitch);			
-        control.valuesString += valueString;
+        Control.valuesString += valueString;
         valueString = "|" + this.midiType + "," + (this.channel - 1) + "," + (this.midiNumber+ 4) + "," + Math.round(this.roll);			
-        control.valuesString += valueString;
+        Control.valuesString += valueString;
         valueString = "|" + this.midiType + "," + (this.channel - 1) + "," + (this.midiNumber+ 5) + "," + Math.round(this.yaw);			
-        control.valuesString += valueString;
+        Control.valuesString += valueString;
     }
 
 }
 
-ControlGyro.prototype.draw = function() {}
+Control.Gyro.prototype.draw = function() {}
 
-ControlGyro.prototype.start = function() {
+Control.Gyro.prototype.start = function() {
     PhoneGap.exec("Gyro.start");
     this.setUpdateRate(this.updateRate);
 }
 
-ControlGyro.prototype.unload = function() {
+Control.Gyro.prototype.unload = function() {
     PhoneGap.exec("Gyro.stop");
 }
 
-ControlGyro.prototype.setReferenceAttitude = function() {
+Control.Gyro.prototype.setReferenceAttitude = function() {
     PhoneGap.exec("Gyro.setReferenceAttitude");
 }
 
-ControlGyro.prototype.setUpdateRate = function(rateInHz) {
+Control.Gyro.prototype.setUpdateRate = function(rateInHz) {
     //console.log("setting gyro rate " + rateInHz);
     PhoneGap.exec("Gyro.setUpdateRate", rateInHz);
 }

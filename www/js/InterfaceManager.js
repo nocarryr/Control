@@ -1,377 +1,599 @@
 /* TODO: Defaults should only load if app is updated, otherwise they should stay deleted. Maybe have a button in preferences that reloads them??? */
 
-function InterfaceManager() {
-	this.init = function() {
-		this.selectedListItem = 0;
-		this.interfaceFiles = new Lawnchair('interfaceFiles');
+Control.interfaceManager = {
+    init: function() {
+        this.selectedListItem = 0;
+        this.loadedInterfaces = [];
+
         this.currentInterfaceName = null;
         this.currentInterfaceJSON = null;
+
         this.interfaceIP = null;
-        interfaceOrientation = null;
         constants = null;
-        this.interfaceDefaults = ["iphoneLandscapeMixer.js",
-                                  "djcut.js",
-                                  "life.js",
-								  "monome.js",
-								  //"multibutton.js",
-								  "multiXY.js",
-								  "sequencer.js",
-								  "gyro.js",
-                                  "spacetime.js",
-                                  "pitchTracker.js",
-                                  ];
-        
-        this.listItemFunctions = [];
-        window.shouldReadFiles = true;
-        window.isLoadingInterfaces = false; // stops database calls from being executed twice, for some reason "get" returns two values.
-    }
-     
-    this.loadScripts = function() {
-        this.shouldLoadInterfaces = new Lawnchair('shouldLoadInterfaces');
-        console.log("LOADING");
-        window.setTimeout(function() {  // needs a timeout for the Lawnchair database to be initialized... ARGGGGHHHH
-            interfaceManager.shouldLoadInterfaces.get("shouldLoad", function(r) { 
-                if(!window.isLoadingInterfaces) {
-                    if(r != null)
-                        window.shouldReadFiles = false; // this means that Control has been launched before, so we should load the interfaces into the database
 
-                    if(window.shouldReadFiles) {
-                        control.ifCount = 0;
-                        interfaceManager.shouldLoadInterfaces.save({key:"shouldLoad", sl:true});
-                        interfaceManager.readFile(interfaceManager.interfaceDefaults[control.ifCount]);
-                    }else{
-                        interfaceManager.createInterfaceListWithStoredInterfaces();
-                    }
-                    window.isLoadingInterfaces = true;
-                }
-            } )
-        }, 250 );
-    }
-    
-    this.readFile = function(filename) {
-		console.log("reading " + filename)
-        var fileref=document.createElement('script')
-        fileref.setAttribute("type","text/javascript");
-        fileref.setAttribute("src", "interfaces/" + filename);
+        this.interfaceDefaults = ["gyro.js", "djcut.js", "multibutton.js", "multiXY.js", "life.js", "iphoneLandscapeMixer.js", "sequencer.js", "monome.js" , "video.js"];
+		
+        //delete localStorage.interfaceFiles;
+        Control.ifCount = 0;
+//        if (typeof localStorage.interfaceFiles == "undefined") {
+//            this.loadedInterfaces = [];
+//            //var msg = "now loading default interfaces. this will only happen the first time the app is launched (possibly also after updates) and takes about 8 seconds";
+//            //navigator.notification.alert(msg, null, "loading");
+//            setTimeout(function() {
+//                Control.interfaceManager.loadScripts();
+//            }, 1000);
+//        } else {
+//            this.loadedInterfaces = JSON.parse(localStorage.interfaceFiles);
+//            this.createInterfaceListWithArray(this.loadedInterfaces);
+//        }
+        Control.interfaceManager.loadScripts();
+
+    },
+
+    loadScripts: function() {
+        Control.data = null;
+        Control.functions = null;
+        var fileref = document.createElement('script')
+        fileref.setAttribute("type", "text/javascript");
+        fileref.setAttribute("src", "interfaces/" + Control.interfaceManager.interfaceDefaults[Control.ifCount]);
         document.getElementsByTagName('head')[0].appendChild(fileref);
-        
-        setTimeout(function() {
-            interfaceManager.saveInterface(window.interfaceString, false);
-            control.ifCount++;
-            if(control.ifCount <= interfaceManager.interfaceDefaults.length) {
-                interfaceManager.readFile(interfaceManager.interfaceDefaults[control.ifCount]);
+
+        window.setTimeout(function() {
+            if (Control.ifCount < Control.interfaceManager.interfaceDefaults.length) {
+                // HERE LIES RIDICULOUSLY OBNOXIOUS CODE TO PARSE EVALUATED JAVASCRIPT INTO A STRING.
+                // BUT, IMPROBABLY, IT IS BETTER THAN THE WAY I USED TO HANDLE STOCK INTERFACES THAT CAME WITH CONTROL. - Charlie
+                var _functions = "{";
+                if (Control.functions != null) {
+                    $.each(Control.functions, function(key, value) {
+                        _functions += key + " : " + value + ",";
+                    })
+                }
+                _functions += "}"
+                _functions = _functions.replace(/[\n\t]/g, '');
+                _functions = _functions.replace(/\s{2,}/g, '');
+
+                if (Control.interface != null) {
+					console.log("LOADING " + Control.interface.name);
+	                var _interface = "{";
+					
+                    _interface += "name : \"" + Control.interface.name + "\",";
+                    _interface += "orientation : \"" + Control.interface.orientation + "\",";
+                    _interface += "pages : [";
+
+                    for (var i = 0; i < Control.interface.pages.length; i++) { // for each page
+                        var page = Control.interface.pages[i];
+                        _interface += "[";
+                        for (var j = 0; j < page.length; j++) { // for each object on a page
+                            _interface += "{";
+                            $.each(page[j], function(key, value) { // for each member of each object on a page
+                                if (typeof value === "string") {
+                                    value = "\"" + value + "\"";
+                                } else if (typeof value === "object" && value instanceof Array) {
+                                    var _value = "[";
+                                    for (var k = 0; k < value.length; k++) { // for each member of an array that is a member of an object on the page
+                                        _value += (typeof value[k] === "string") ? "\"" + value[k] + "\"" : value[k];
+                                        _value += ",";
+                                    }
+                                    _value += "]";
+                                    value = _value;
+                                } else if (typeof value === "function") {
+                                    value = value.toString();
+                                }
+                                _interface += key + " : " + value + ",";
+                            }); // end member loop
+                            _interface += "},";
+                        } // end page loop
+                        _interface += "]";
+                        if (j != Control.interface.pages.length - 1) {
+                            _interface += ",";
+                        }
+                    } // end pages loop
+                    _interface += "],";
+
+                    if (typeof Control.interface.constants !== "undefined") {
+                        _interface += "constants : [";
+                        for (var j = 0; j < Control.interface.constants.length; j++) { // for each object on a page
+                            _interface += "{";
+                            $.each(Control.interface.constants[j], function(key, value) { // for each member of each object on a page
+                                if (typeof value === "string") {
+                                    value = "\"" + value + "\"";
+                                } else if (typeof value === "object" && value instanceof Array) {
+                                    var _value = "[";
+                                    for (var k = 0; k < value.length; k++) { // for each member of an array that is a member of an object on the page
+                                        _value += (typeof value[k] === "string") ? "\"" + value[k] + "\"" : value[k];
+                                        _value += ",";
+                                    }
+                                    _value += "]";
+                                    value = _value;
+                                } else if (typeof value === "function") {
+                                    value = value.toString();
+                                }
+                                _interface += key + " : " + value + ",";
+                            }); // end member loop
+                            _interface += "},";
+                        }
+                        _interface += "],";
+                    }
+                    _interface += "}"; // end interface
+                    _interface = _interface.replace(/[\n\t]/g, '');
+                    _interface = _interface.replace(/\s{2,}/g, '');
+
+                    var jsonString = "Control.data = ";
+                    jsonString += (typeof Control.data === null) ? "{}" : JSON.stringify(Control.data);
+                    jsonString += ";Control.functions = ";
+                    jsonString += (typeof Control.functions === null) ? "{}" : _functions;
+                    jsonString += ";Control.interface = " + _interface;
+
+                    Control.interfaceManager.loadedInterfaces[Control.ifCount] = {
+                        'name': Control.interface.name,
+                        'json': jsonString
+                    };
+                    Control.ifCount++;
+                    Control.interfaceManager.loadScripts();
+                }
             }else{
-                interfaceManager.createInterfaceListWithStoredInterfaces();
-			}
-        }, 100);
-    }
-	
-	this.promptForInterfaceDownload = function() {
-		var interfacesDiv = document.getElementById("Interfaces");
-		var promptDiv = document.createElement("div");
-		var input =	document.createElement("input");
-		var inputHeader = document.createElement("h2");
-        
-		var cancelButton = document.createElement("button");
+                localStorage.interfaceFiles = JSON.stringify(Control.interfaceManager.loadedInterfaces);
+                Control.interfaceManager.createInterfaceListWithArray(Control.interfaceManager.loadedInterfaces);
+            }
+        }, 500);
+    },
+
+    promptForInterfaceDownload: function() {
+        var interfacesDiv = document.getElementById("Interfaces");
+        var promptDiv = document.createElement("div");
+        var input = document.createElement("input");
+        var inputHeader = document.createElement("h2");
+
+        var cancelButton = document.createElement("button");
         var submitButton = document.createElement("button");
-		
-		inputHeader.innerHTML = "Enter Interface URL";
-		inputHeader.setAttribute("id", "inputFieldHeader");
-		inputHeader.setAttribute("style", "top:45px; color:#fff; font-size:1.5em");
-		
-		input.setAttribute("style", "top: 90px; height:50px; width:90%; font-size:1.25em");
-		input.setAttribute("autocorrect", "off");
-		input.value = "http://";
-		//input.setAttribute("onchange", "interfaceManager.downrunCurrentInterfaceFromPrompt()");
-		input.setAttribute("type", "url");
-		input.setAttribute("id", "ipField");
-        
-		cancelButton.innerHTML = "Cancel";
-		cancelButton.setAttribute("style", "margin-top: 1em; font-size:1.5em; width: 5em; height: 2em; background-color:black; color:#fff; border: 1px solid #fff");
-		cancelButton.setAttribute("ontouchend", "document.getElementById('Interfaces').removeChild(document.getElementById('promptDiv'))");
-        
+
+        inputHeader.innerHTML = "Enter Interface URL";
+        inputHeader.setAttribute("id", "inputFieldHeader");
+        inputHeader.setAttribute("style", "top:45px; color:#fff; font-size:1.5em");
+
+        input.setAttribute("style", "top: 90px; height:50px; width:90%; font-size:1.25em");
+        input.setAttribute("autocorrect", "off");
+        input.value = "http://";
+        input.setAttribute("type", "url");
+        input.setAttribute("id", "ipField");
+
+        cancelButton.innerHTML = "Cancel";
+        cancelButton.setAttribute("style", "margin-top: 1em; font-size:1.5em; width: 5em; height: 2em; background-color:black; color:#fff; border: 1px solid #fff");
+        $(cancelButton).bind("touchend", function(e) {
+            document.getElementById('Interfaces').removeChild(document.getElementById('promptDiv'));
+            e.preventDefault();
+        });
+
         submitButton.innerHTML = "Submit";
-		submitButton.setAttribute("style", "margin-left: 1em; margin-top: 1em; font-size:1.5em; width: 5em; height: 2em; background-color:#fff; color:#000; border: 1px solid #fff");
-        submitButton.setAttribute("ontouchend", "interfaceManager.downloadInterfaceFromPrompt()");
-		//submitButton.setAttribute("ontouchend", "document.getElementById('Interfaces').removeChild(document.getElementById('promptDiv'))");
-		
-		promptDiv.setAttribute("style","z-index:2; left:0px; top:0px; position:absolute; background-color:rgba(0,0,0,.8); width:100%; height:100%;");
-		promptDiv.setAttribute("id", "promptDiv");
-		promptDiv.appendChild(inputHeader);
-		promptDiv.appendChild(input);
+        submitButton.setAttribute("style", "margin-left: 1em; margin-top: 1em; font-size:1.5em; width: 5em; height: 2em; background-color:#fff; color:#000; border: 1px solid #fff");
+        $(submitButton).bind("touchend", function(e) {
+            Control.interfaceManager.downloadInterfaceFromPrompt();
+            e.preventDefault();
+        });
+
+        promptDiv.setAttribute("style", "z-index:2; left:0px; top:0px; position:absolute; background-color:rgba(0,0,0,.8); width:100%; height:100%;");
+        promptDiv.setAttribute("id", "promptDiv");
+        promptDiv.appendChild(inputHeader);
+        promptDiv.appendChild(input);
         promptDiv.appendChild(document.createElement("br"));
-        //promptDiv.appendChild(shouldReloadBox);
-        //promptDiv.appendChild(shouldReloadText);
         promptDiv.appendChild(document.createElement("br"));
 
-		promptDiv.appendChild(cancelButton);
+        promptDiv.appendChild(cancelButton);
         promptDiv.appendChild(submitButton);
-		
-		interfacesDiv.appendChild(promptDiv);
-	}
-    
-    	
-	this.downloadInterfaceFromPrompt = function() {
-		var ipAddress = document.getElementById('ipField').value;
+
+        interfacesDiv.appendChild(promptDiv);
+    },
+
+
+    downloadInterfaceFromPrompt: function() {
+        var ipAddress = document.getElementById('ipField').value;
         //var shouldReload = document.getElementById('shouldReloadBox').checked;
-		interfaceManager.downloadInterface(ipAddress);
-	}
-	
-	this.downloadInterface = function(ipAddress) { // EVENT --- CANNOT REFER TO THIS, MUST USE INTERFACE MANAGER
-        console.log("downloading...");
-		interfaceManager.myRequest = new XMLHttpRequest();    	
-		var loadedInterfaceName = null;
-        interfaceManager.myRequest.onreadystatechange = function() {
-            console.log("downloading..." + interfaceManager.myRequest.readyState );
-            if(interfaceManager.myRequest.readyState == 4) {
-                console.log(interfaceManager.myRequest.responseText);
-                eval(interfaceManager.myRequest.responseText);
-                if(loadedInterfaceName != null) {
-                    if(document.getElementById("promptDiv") != null) {
+        Control.interfaceManager.downloadInterface(ipAddress);
+    },
+
+    downloadInterface: function(ipAddress) {
+        Control.interfaceManager.myRequest = new XMLHttpRequest();
+        var loadedInterfaceName = null;
+
+        Control.interfaceManager.myRequest.onreadystatechange = function() {
+            if (Control.interfaceManager.myRequest.readyState === 4) {
+                if(Control.interfaceManager.myRequest.status === 404 ) {
+                    alert("Your file could not be downloaded. Please check the URL and try again.");
+                    return;
+                }
+                console.log(Control.interfaceManager.myRequest.responseText);
+                console.log("before parsing");
+                try {
+                    eval(Control.interfaceManager.myRequest.responseText);
+                } catch(e) {
+                    var err = e.constructor('Error in Evaled Script: ' + e.message);
+                    alert("Your file was downloaded, but cannot be parsed. Please check the file for errors.");
+                    throw err;
+                }
+				
+                eval(Control.interfaceManager.myRequest.responseText);
+                console.log("after parsing");
+                //console.log(Control.interface);
+                if (Control.interface.name != null) {
+                    if (document.getElementById("promptDiv") != null) {
                         document.getElementById("Interfaces").removeChild(document.getElementById("promptDiv"));
                     }
-                    interfaceManager.saveInterface(interfaceManager.myRequest.responseText, true, ipAddress);
-                    interfaceManager.interfaceIP = ipAddress;
-                    interfaceManager.runInterface(interfaceManager.myRequest.responseText);
-                }else{
-                    document.getElementById("inputFieldHeader").innerHTML = "Could not load. Please try another URL";
+                    Control.interfaceManager.saveInterface(Control.interfaceManager.myRequest.responseText, true, ipAddress);
+                    Control.interfaceManager.interfaceIP = ipAddress;
+                    Control.interfaceManager.runInterface(Control.interfaceManager.myRequest.responseText);
+                } else {
                     return;
                 }
             }
-        }
-        interfaceManager.myRequest.ipAddress = ipAddress;        
-		//interfaceManager.myRequest.withCredentials = "true";                
-		interfaceManager.myRequest.open("GET", ipAddress, true);
-        interfaceManager.myRequest.send(null);
-	}
-	
-	
-	this.highlight = function (listNumber) {
-		this.selectedListItem = listNumber;
-		var list = document.getElementById('interfaceList');
-		for(var i = 0; i < list.childNodes.length; i++) {
-			if(i != listNumber) {
-				list.childNodes[i].style.backgroundColor = "#000";
-			}else{
-				list.childNodes[i].style.backgroundColor = "#333";
-			}
-		}
-	}
-    
-    this.createInterfaceListWithStoredInterfaces = function() {
-		$('#interfaceList').empty();
-		interfaceManager.interfaceFiles.all(function(r) { interfaceManager.createInterfaceListWithArray(r); });
-        window.isLoadingInterfaces = false;
-	}
-    
-	this.createInterfaceListWithArray = function(listArray) {
-		var list = document.getElementById('interfaceList');
-		var count = 0;
+        };
+        Control.interfaceManager.myRequest.ipAddress = ipAddress;
+        //Control.interfaceManager.myRequest.withCredentials = "true";                
+        Control.interfaceManager.myRequest.open("GET", ipAddress, true);
+        Control.interfaceManager.myRequest.send(null);
+    },
 
-		for(var i = 0; i < listArray.length; i++) {
-			var r = listArray[i];
-			var item = document.createElement('li');
-            
-            function _touchend(_key, _count) { 
+    highlight: function(listNumber) {
+        this.selectedListItem = listNumber;
+        var list = document.getElementById('interfaceList');
+        for (var i = 0; i < list.childNodes.length; i++) {
+            if (i != listNumber) {
+                list.childNodes[i].style.backgroundColor = "#000";
+            } else {
+                list.childNodes[i].style.backgroundColor = "#333";
+            }
+        }
+    },
+
+    createInterfaceListWithStoredInterfaces: function() {
+        $('#interfaceList').empty();
+
+        Control.interfaceManager.createInterfaceListWithArray(Control.interfaceManager.loadedInterfaces);
+
+        window.isLoadingInterfaces = false;
+    },
+
+    createInterfaceListWithArray: function(listArray) {
+		console.log("CREATING LIST");
+        var list = $("#interfaceList");
+        var count = 0;
+
+        for (var i = 0; i < listArray.length; i++) {
+            var r = listArray[i];
+            var item = document.createElement('li');
+
+            function _touchend(_key, _count) {
                 return function(e) {
-                    interfaceManager.highlight(_count);
-                    interfaceManager.selectInterfaceFromList(_key);
+                    Control.interfaceManager.highlight(_count);
+                    Control.interfaceManager.selectInterfaceFromList(_count);
                 }
             }
-            
-            $(item).bind("tap", _touchend(r.key, count++));
 
-            item.innerHTML = r.key;
-                        
+            $(item).bind("tap", _touchend(r.name, count++));
+
+            $(item).html(r.name);
+
             $(item).css({
-                        "border-bottom" : "1px solid #666", 
-                        "font-weight"   : "normal"
-                        });
-            
-            $(item).addClass('destinationListItem interfaceListItem');
+                "border-bottom": "1px solid #666",
+                "font-weight": "normal"
+            });
 
-   			list.appendChild(item);
-		}
-        
-		$(list).listview('refresh');
-	}
+            $(item).addClass('interfaceListItem');
 
-	this.editInterfaceList = function() {
-		var list = document.getElementById('interfaceList');
-		
-		if(list.childNodes.length > 0) {
-			document.getElementById('interfaceEditBtn').innerHTML = "Done";
-			document.getElementById('interfaceEditBtn').ontouchend = interfaceManager.endEditing;
+            $(list).append(item);
+        }
 
-			for(var i = 0; i < list.childNodes.length; i++) {
-				var item = list.childNodes[i];
-				var deleteButton = document.createElement("div");
-				$(deleteButton).css({
-                                    "float":                    "left",
-                                    "margin-right":             "5px",
-                                    "position":                 "relative",
-                                    "top":                      "0px",
-                                    "border":                   "#fff 2px solid",
-                                    "-webkit-border-radius":    "10px",
-                                    "width" :                   "15px",
-                                    "height":                   "15px",
-                                    "background-color":         "#f00",
-                                    "color":                    "#fff",
-                                    "font-weight" :             "bold",
-                                    });
-                
-                function _touchend(interfaceNumber) { 
+        $(list).listview('refresh');
+    },
+
+    editInterfaceList: function() {
+        var list = document.getElementById('interfaceList');
+
+        if (list.childNodes.length > 0) {
+            document.getElementById('interfaceEditBtn').innerHTML = "Done";
+            document.getElementById('interfaceEditBtn').ontouchend = Control.interfaceManager.endEditing;
+
+            for (var i = 0; i < list.childNodes.length; i++) {
+                var item = list.childNodes[i];
+                var deleteButton = document.createElement("div");
+                $(deleteButton).css({
+                    "float": "left",
+                    "margin-right": "5px",
+                    "position": "relative",
+                    "top": "0px",
+                    "border": "#fff 2px solid",
+                    "-webkit-border-radius": "10px",
+                    "width": "15px",
+                    "height": "15px",
+                    "background-color": "#f00",
+                    "color": "#fff",
+                    "font-weight": "bold",
+                });
+
+                function _touchend(interfaceNumber) {
                     return function(e) {
-                        interfaceManager.removeInterface(interfaceNumber);
+                        Control.interfaceManager.removeInterface(interfaceNumber);
                     }
                 }
-                
-				$(deleteButton).html("<img style='position:relative; top:-.7em; left:-.65em;' src='images/dash.png'>");
-				$(deleteButton).bind("touchend", _touchend(i), false);
-				$(item).prepend(deleteButton);
-				$(item).unbind("tap");		
-			}
-		}
-	}
-	
-	this.endEditing = function() {
-		var list = document.getElementById('interfaceList');
 
-		document.getElementById('interfaceEditBtn').innerHTML = "Edit";
-		document.getElementById('interfaceEditBtn').ontouchend = interfaceManager.editInterfaceList;
-		for(var i = 0; i < list.childNodes.length; i++) {
-			var item = list.childNodes[i];
-			item.removeChild(item.childNodes[0]);
-            
-            function _touchend(interfaceNumber, itemHTML) { 
+                $(deleteButton).html("<img style='position:relative; top:-.7em; left:-.65em;' src='images/dash.png'>");
+                $(deleteButton).bind("touchend", _touchend(i), false);
+                $(item).prepend(deleteButton);
+                $(item).unbind("tap");
+            }
+        }
+    },
+
+    endEditing: function() {
+        var list = document.getElementById('interfaceList');
+
+        document.getElementById('interfaceEditBtn').innerHTML = "Edit";
+        document.getElementById('interfaceEditBtn').ontouchend = Control.interfaceManager.editInterfaceList;
+        for (var i = 0; i < list.childNodes.length; i++) {
+            var item = list.childNodes[i];
+            item.removeChild(item.childNodes[0]);
+
+            function _touchend(interfaceNumber, itemHTML) {
                 return function(e) {
-                    interfaceManager.highlight(interfaceNumber);
-                    interfaceManager.selectInterfaceFromList(itemHTML);
+                    Control.interfaceManager.highlight(interfaceNumber);
+                    Control.interfaceManager.selectInterfaceFromList(itemHTML);
                 }
             }
-            
-			$(item).bind("tap", _touchend(i, item.innerHTML));
-		}
-	}
-    
-    this.refreshInterface = function() {
 
-        interfaceManager.myRequest = new XMLHttpRequest();    	
-        interfaceManager.myRequest.onreadystatechange = function() {
-            if(interfaceManager.myRequest.readyState == 4) {              
-                interfaceManager.runInterface(interfaceManager.myRequest.responseText);
-                interfaceManager.interfaceFiles.save({key:interfaceManager.currentInterfaceName, json:interfaceManager.myRequest.responseText, address:interfaceManager.interfaceIP});
+            $(item).bind("tap", _touchend(i, item.innerHTML));
+        }
+    },
+
+    refreshInterface: function() {
+        //console.log("IP = " + Control.interfaceManager.interfaceIP);
+        Control.interfaceManager.myRequest = new XMLHttpRequest();
+        Control.interfaceManager.myRequest.onreadystatechange = function() {
+            
+            console.log("downloading stage " + Control.interfaceManager.myRequest.readyState);
+            
+            if (Control.interfaceManager.myRequest.readyState === 4) {
+                if(Control.interfaceManager.myRequest.status === 404 ) {
+                    alert("The URL this file was originally downloaded from can no longer be reached. Please reload the interface from the Interfaces tab.");
+                    return;
+                }
+                
+                console.log(Control.interfaceManager.myRequest.responseText);
+                console.log("before parsing");
+                
+                try {
+                    eval(Control.interfaceManager.myRequest.responseText);
+                } catch(e) {
+                    var err = e.constructor('Error in Evaled Script: ' + e.message);
+                    alert("Your file was downloaded, but cannot be parsed. Please check the file for errors.");
+                    throw err;
+                }
+
+                for (var i = 0; i < Control.interfaceManager.loadedInterfaces.length; i++) {
+                    var interface = Control.interfaceManager.loadedInterfaces[i];
+                    if (interface.name == Control.interfaceManager.currentInterfaceName) {
+                        
+                        console.log("SHOULD BE REPLACING " + i + " : " + Control.interface.name);
+                        var newInterface = {
+                            name: Control.interface.name,
+                            json: Control.interfaceManager.myRequest.responseText,
+                            address: Control.interfaceManager.interfaceIP
+                        };
+
+                        Control.interfaceManager.loadedInterfaces.splice(i, 1, newInterface);
+
+                        localStorage.interfaceFiles = JSON.stringify(Control.interfaceManager.loadedInterfaces);
+
+                        Control.interfaceManager.runInterface(Control.interfaceManager.myRequest.responseText);
+
+                        break;
+                    }
+                }
             }
         }
-		//interfaceManager.myRequest.withCredentials = "true";                
-		interfaceManager.myRequest.open("GET", interfaceManager.interfaceIP, true);
-        interfaceManager.myRequest.send(null);
+        Control.interfaceManager.myRequest.open("GET", Control.interfaceManager.interfaceIP, true);
+        Control.interfaceManager.myRequest.send(null);
+    },
 
-    }
-    
-	this.saveInterface = function(interfaceJSON, shouldReloadList, ipAddress) {
-        console.log("SAVING");
-        if(typeof ipAddress == "undefined") ipAddress = "";
-		var loadedInterfaceName = null;
-        //console.log(interfaceJSON);
-		eval(interfaceJSON);
-        if(loadedInterfaceName != null) {
-            //interfaceManager.interfaceFiles.remove(loadedInterfaceName, 
-                interfaceManager.interfaceFiles.save( {key:loadedInterfaceName, json:interfaceJSON, address:ipAddress},
-                                                       function(r) {
-                                                             //console.log("interface saved");
-                                                            if(shouldReloadList) 
-                                                                interfaceManager.createInterfaceListWithStoredInterfaces();
-                                                       }
-                )
-            //);
+    saveInterface: function(interfaceJSON, shouldReloadList, ipAddress) {
+        if (typeof ipAddress === "undefined") ipAddress = "";
+
+        //eval(interfaceJSON);
+        console.log("SAVING INTERFACE " + Control.interface.name);
+
+        if (Control.interface.name != null) {
+            Control.interfaceManager.loadedInterfaces.push({
+                name: Control.interface.name,
+                json: interfaceJSON,
+                address: ipAddress
+            });
+
+            localStorage.interfaceFiles = JSON.stringify(Control.interfaceManager.loadedInterfaces);
+
+            if (shouldReloadList) {
+                Control.interfaceManager.createInterfaceListWithStoredInterfaces();
+            }
         }
-        console.log("END SAVING");
-	}
+    },
 	
-	this.pushInterfaceWithDestination = function(interfaceJSON, nameOfSender, newDestination) {
-         if(typeof nameOfSender != "undefined") {
-            if(confirm("An interface is being pushed to you by " + nameOfSender + ". Do you accept it?")) {
+	saveInterface2 : function() {
+		var data = "Control.data = ";
+		data += typeof Control.data === "undefined" ? "{}" : JSON.stringify(Control.data);
+		data += ";\n";
+		
+		var functions = "Control.functions = ";
+		if(typeof Control.functions === "undefined" || Control.functions === null) {
+			functions += "{};\n";
+		}else{
+			functions += "{\n";
+			for(var key in Control.functions) {
+				functions += "{0} : {1},\n".format(key, Control.functions[key].toString() );
+			}
+			functions += "};\n";
+		}
+		
+		var _name = typeof Control.interface.name === "undefined" ? "" : Control.interface.name
+		var name = window.prompt("Enter a name for the interface", _name);
+		
+		var _interface = "Control.interface = {\n";
+		_interface += "name : \"{0}\",".format(name);
+		_interface += "orientation : \"{0}\",".format(Control.interface.orientation);		
+		
+		var constants = "constants : ";
+		constants += this.processArray(Control.constants) + "\n";
+		
+		var pages = "pages : ";
+		pages += this.processArray(Control.pages);
+		
+		_interface += "{0}{1}\n};".format(constants, pages);
+		var _json = data + functions + _interface;
+		console.log(_json);
+		this.saveInterface(_json, true);
+	},
+	
+	processArray : function(arr) {
+		var _arr = "[\n";
+		for(var j = 0; j < arr.length; j++) {
+			var w = arr[j];
+			if($.isArray(w)) {
+				_arr += this.processArray(w);
+				continue;
+			}
+			var obj = "{\n"
+			obj += "\"type\" : \"" + w.props.type + "\","; 
+			for(key in w.form) {
+				var value = w[key];
+				if(typeof value === "function") {
+					value = value.toString();
+				}else{
+					value = JSON.stringify(value);
+				}
+				obj += "\"{0}\" : {1},\n".format(key, value);					
+			}
+			obj += "},";
+			_arr += obj;
+		}
+		_arr += "\n],";
+		return _arr;
+	},
+
+    pushInterfaceWithDestination: function(interfaceJSON, nameOfSender, newDestination) {
+        if (typeof nameOfSender != "undefined") {
+            if (confirm("An interface is being pushed to you by " + nameOfSender + ". Do you accept it?")) {
                 var loadedInterfaceName = null;
                 this.saveInterface(interfaceJSON, false);
-                interfaceManager.runInterface(interfaceJSON);
+                Control.interfaceManager.runInterface(interfaceJSON);
                 var segments = newDestination.split(":");
-                
-                destinationManager.addDestination(segments[0], segments[1], false, false);
-                destinationManager.selectPushedDestination(segments[0], segments[1]);
+
+                Control.destinationManager.addDestination(segments[0], segments[1], false, false);
+                Control.destinationManager.selectPushedDestination(segments[0], segments[1]);
             }
         }
-    }
+    },
 
-	this.pushInterface = function(interfaceJSON) {
-		// TODO: change so it gets rid of the index.html at top of confirm window. Might require a new version of phonegap or else something tricky.
-       
-        if(confirm("An interface is being pushed to you. Do you accept it?")) {
+    pushInterface: function(interfaceJSON) {
+        // TODO: change so it gets rid of the index.html at top of confirm window. Might require a new version of phonegap or else something tricky.
+        if (confirm("An interface is being pushed to you. Do you accept it?")) {
             var loadedInterfaceName = null;
-            interfaceManager.runInterface(interfaceJSON);
+            Control.interfaceManager.runInterface(interfaceJSON);
             this.saveInterface(interfaceJSON, false);
 
         }
 
-	}
-	
-	this.removeInterface = function (itemNumber) {
-        
-        var listItem = $('#interfaceList > li:eq(' + itemNumber +')');
-        var arr = listItem.html().split("</div>");
-		var newKey = arr[1];
-        interfaceManager.interfaceFiles.remove(newKey);        
-        console.log("removing " + newKey);
-		listItem.remove();
-        $('#interfaceList').listview('refresh');
-	}
-    
-    this.runInterface = function(json) {
-		control.unloadWidgets();
+    },
+
+    removeInterface: function(itemNumber) {
+        var listItem = $('#interfaceList > li:eq(' + itemNumber + ')');
+        var arr = $(listItem).html().split("</div>");
+        var newKey = arr[1];
+        for (var i = 0; i < Control.interfaceManager.loadedInterfaces.length; i++) {
+            var _interface = Control.interfaceManager.loadedInterfaces[i];
+            //console.log("Key = " + newKey + " :: interface.name = " + interface.name]);
+            if (_interface.name == newKey) {
+                Control.interfaceManager.loadedInterfaces.splice(i, 1);
+                listItem.remove();
+                localStorage.interfaceFiles = JSON.stringify(Control.interfaceManager.loadedInterfaces);
+                //$('#interfaceList').listview('refresh');
+                break;
+            }
+        }
+    },
+
+    runInterface: function(js) {
+        Control.unloadWidgets();
         constants = null;
         pages = null;
-                
-        oscManager.delegate = oscManager;
-        midiManager.delegate = midiManager;
         
-        eval(json);
+        Control.oscManager.delegate = Control.oscManager;
+        Control.midiManager.delegate = Control.midiManager;
         
-        this.currentInterfaceName = loadedInterfaceName;
-        this.currentInterfaceJSON = json;
-		
-		if(typeof interfaceOrientation != "undefined") {
-			console.log(interfaceOrientation);
-            PhoneGap.exec("Device.setRotation", interfaceOrientation);
+        if(Control.timeout !== null) {
+            window.clearTimeout(Control.timeout);
+            Control.timeout = null;
         }
-        //if(control.orientation == 0 || control.orientation == 180) {
-		if(interfaceOrientation == "portrait") {
-            control.makePages(pages, screen.width, screen.height);
-        }else{
-            control.makePages(pages, screen.height, screen.width);
+        
+        eval(js);
+
+        this.currentInterfaceName = Control.interface.name;
+
+        if (typeof Control.interface.orientation != "undefined") {
+            Control.device.setRotation(Control.interface.orientation);
         }
 
-        if(constants != null) {
-            control.loadConstants(constants);
+        if (Control.interface.orientation == "portrait") {
+            Control.makePages(Control.interface.pages, screen.width, screen.height);
+        } else {
+            Control.makePages(Control.interface.pages, screen.height, screen.width);
         }
-        control.loadWidgets();
-        if(this.currentTab != document.getElementById("selectedInterface")) {
-            control.shouldPrevent = true;
-            control.changeTab(document.getElementById("selectedInterface"));
+
+        if (typeof Control.interface.onpreinit === "string") {
+            eval(Control.interface.onpreinit);
+        } else if (Control.interface.onpreinit != null) {
+            Control.interface.onpreinit();
+        }
+		
+        if (Control.interface.constants != null) {
+            Control.loadConstants(Control.interface.constants);
+        }
+
+        Control.loadWidgets();
+
+        if (typeof Control.interface.oninit === "string") {
+            eval(Control.interface.oninit);
+        } else if (Control.interface.oninit != null) {
+            Control.interface.oninit();
+        }
+
+        if (this.currentTab != document.getElementById("selectedInterface")) {
+            Control.shouldPrevent = true;
+            Control.changeTab(document.getElementById("selectedInterface"));
             $.mobile.changePage('#SelectedInterfacePage');
-		}
+        }
+    },
+
+    selectInterfaceFromList: function(interfaceNumber) {
+        var r = Control.interfaceManager.loadedInterfaces[interfaceNumber];
+        //console.log(r);
+        if (typeof r.address != "undefined") {
+            Control.interfaceManager.interfaceIP = r.address;
+        }
+
+        Control.interfaceManager.runInterface(r.json);
+    },
+};
+
+String.prototype.format = function(i, safe, arg) {
+
+    function format() {
+        var str = this,
+            len = arguments.length + 1;
+
+        for (i = 0; i < len; arg = arguments[i++]) {
+            safe = arg; //typeof arg === 'object' ? JSON.stringify(arg) : arg;
+            str = str.replace(RegExp('\\{' + (i - 1) + '\\}', 'g'), safe);
+        }
+        return str;
     }
-	
-	this.selectInterfaceFromList = function(interfaceName) {
-		interfaceManager.interfaceFiles.get(interfaceName, 
-			function(r){
-                if(typeof r.address != "undefined")
-                    interfaceManager.interfaceIP = r.address;
-                interfaceManager.runInterface(r.json);
-			}
-		);
-	}
-		
-	return this;
-}
 
+    format.native = String.prototype.format;
 
+    return format;
+}();
